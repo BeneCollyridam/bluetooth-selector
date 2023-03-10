@@ -1,6 +1,6 @@
 use std::{
     io::{self, Read},
-    process::Command,
+    process::{Command, Stdio},
     str::FromStr,
     thread::sleep,
     time::Duration,
@@ -19,19 +19,35 @@ impl<'a> std::fmt::Display for Device<'a> {
 }
 
 fn main() {
+    // Spawn process in back while we sort out initialization
+    let bluteootctl_handle = Command::new("bluetoothctl")
+        .arg("devices")
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let args = std::env::args().collect::<Vec<String>>();
+    let mode = if args.len() == 2 {
+        if args[1] == "connect" || args[1] == "disconnect" {
+            &args[1]
+        } else {
+            panic!("Arg must either be connect or disconnect")
+        }
+    } else {
+        "connect"
+    };
+
     Command::new("stty")
         .arg("cbreak")
         .arg("-echo")
         .status()
         .expect("Could not run stty");
 
-    let cmd_output = Command::new("bluetoothctl")
-        .arg("devices")
-        .output()
-        .unwrap();
+    let output = bluteootctl_handle.wait_with_output().unwrap();
+
     let devices = {
         let mut devices = Vec::new();
-        for l in std::str::from_utf8(&cmd_output.stdout)
+        for l in std::str::from_utf8(&output.stdout)
             .expect("Not valid utf-8")
             .lines()
             .filter(|x| !x.is_empty())
@@ -80,7 +96,7 @@ fn main() {
     };
 
     let mut connect_process = Command::new("bluetoothctl")
-        .args(["connect", devices[n].mac_addr])
+        .args([mode, devices[n].mac_addr])
         .spawn()
         .unwrap();
 
